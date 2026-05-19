@@ -124,8 +124,8 @@ static bool probe_fabric_support(unsigned long long device) {
   probe_prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_FABRIC;
 
   size_t granularity;
-  r = cuMemGetAllocationGranularity(
-      &granularity, &probe_prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
+  r = cuMemGetAllocationGranularity(&granularity, &probe_prop,
+                                    CU_MEM_ALLOC_GRANULARITY_MINIMUM);
   if (r != CUDA_SUCCESS) {
     fabric_support[device].store(2, std::memory_order_release);
     return false;
@@ -170,36 +170,36 @@ void create_and_map(unsigned long long device, ssize_t size, CUdeviceptr d_mem,
     prop.allocFlags.gpuDirectRDMACapable = 1;
   }
 
-#if defined(CUDA_VERSION) && CUDA_VERSION >= 12040
+  #if defined(CUDA_VERSION) && CUDA_VERSION >= 12040
   if (probe_fabric_support(device)) {
     prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_FABRIC;
   } else {
     prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
   }
-#else
+  #else
   prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
-#endif
+  #endif
 #endif
 
 #ifndef USE_ROCM
   // Allocate memory using cuMemCreate
   CUresult ret = (CUresult)cuMemCreate(p_memHandle, size, &prop, 0);
   if (ret) {
-#if defined(CUDA_VERSION) && CUDA_VERSION >= 12040
+  #if defined(CUDA_VERSION) && CUDA_VERSION >= 12040
     // Safety net: if fabric was probed as available but this allocation
     // still fails, fall back to POSIX FD and update the cache.
-    if (fabric_support[device].load(std::memory_order_acquire) == 1 &&
-        (ret == CUDA_ERROR_NOT_PERMITTED ||
-         ret == CUDA_ERROR_NOT_SUPPORTED)) {
+    if (device < MAX_DEVICES &&
+        fabric_support[device].load(std::memory_order_acquire) == 1 &&
+        (ret == CUDA_ERROR_NOT_PERMITTED || ret == CUDA_ERROR_NOT_SUPPORTED)) {
       fabric_support[device].store(2, std::memory_order_release);
       prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
       CUDA_CHECK(cuMemCreate(p_memHandle, size, &prop, 0));
     } else {
       CUDA_CHECK(ret);
     }
-#else
+  #else
     CUDA_CHECK(ret);
-#endif
+  #endif
   }
   if (error_code != 0) {
     return;
@@ -364,8 +364,7 @@ void* my_malloc(ssize_t size, int device, CUstream stream) {
   // first allocation, align the size, and reserve an address, and also allocate
   // a CUmemGenericAllocationHandle
 
-  // No fabric/POSIX handle requested here — this path is for weight loading
-  // (sleep mode), not KV cache; create_and_map handles KV handle types.
+  // No handle type here; create_and_map sets fabric/POSIX as needed.
   CUmemAllocationProp prop = {};
   prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
   prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
