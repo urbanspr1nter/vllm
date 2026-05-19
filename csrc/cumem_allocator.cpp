@@ -97,10 +97,11 @@ void ensure_context(unsigned long long device) {
 
 #if !defined(USE_ROCM) && defined(CUDA_VERSION) && CUDA_VERSION >= 12040
 // Per-device cache: 0 = not probed, 1 = supported, 2 = not supported
-static int fabric_support[256] = {0};
+static constexpr int MAX_DEVICES = 32;
+static int fabric_support[MAX_DEVICES] = {0};
 
 static bool probe_fabric_support(unsigned long long device) {
-  if (device >= 256) return false;
+  if (device >= MAX_DEVICES) return false;
   if (fabric_support[device] != 0) return fabric_support[device] == 1;
 
   int fab_flag = 0;
